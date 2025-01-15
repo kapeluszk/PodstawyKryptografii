@@ -6,36 +6,30 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
+	"time"
 )
 
-// flipRandomBit zmienia jeden losowy bit w danych, ale nie w IV
 func flipRandomBit(data []byte, blockSize int) ([]byte, error) {
-	// Upewnij się, że dane są wystarczająco długie, aby można było zmieniać bity poza IV
-	if len(data) <= blockSize {
-		return nil, fmt.Errorf("data is too short to flip a bit without affecting the IV")
+	// Ensure we don't flip a bit in the first three blocks
+	if len(data) <= 3*blockSize {
+		return nil, fmt.Errorf("data is too short to flip a bit without affecting the first three blocks")
 	}
 
-	// Obliczamy maksymalny możliwy indeks bitu (poza IV)
-	maxBitIndex := (len(data) - blockSize) * 8
+	start := 3 * blockSize * 8
+	end := len(data) * 8
 
-	// Generujemy losowy bit w zakresie od 0 do maxBitIndex
-	randomByte := make([]byte, 1)
-	if _, err := rand.Read(randomByte); err != nil {
-		return nil, fmt.Errorf("error generating random byte: %v", err)
+	// Generate a random bit to flip
+	bitToFlip := make([]byte, 2)
+	if _, err := rand.Read(bitToFlip); err != nil {
+		return nil, fmt.Errorf("error generating random bit: %v", err)
 	}
+	bitIndex := int(bitToFlip[0])%(end-start) + start
 
-	// Losujemy indeks bitu w danych (poza IV)
-	bitIndex := int(randomByte[0])%maxBitIndex + blockSize*8
-
-	// Obliczamy indeks bajtu i pozycję bitu w tym bajcie
 	byteIndex := bitIndex / 8
-	bitPos := bitIndex % 8
+	bitIndex = bitIndex % 8
 
-	// Zmieniamy wybrany bit
-	data[byteIndex] ^= 1 << bitPos
-
+	data[byteIndex] ^= 1 << bitIndex
 	return data, nil
 }
 
@@ -151,25 +145,29 @@ func decryptCTR(cipherText, key []byte) ([]byte, error) {
 }
 
 func processFile(fileName string, key []byte) {
-	plainText, err := ioutil.ReadFile(fileName)
+	plainText, err := os.ReadFile(fileName)
 	if err != nil {
 		fmt.Println("Error reading file:", err)
 		return
 	}
 
 	// Encrypt and decrypt using ECB
+	start := time.Now()
 	ecbCipherText, err := encryptECB(plainText, key)
 	if err != nil {
 		fmt.Println("Error encrypting ECB:", err)
 		return
 	}
+	fmt.Println("Time taken for ECB encryption for file", fileName, ":", time.Since(start))
 	os.WriteFile(fileName+"_ecb_enc.txt", ecbCipherText, 0644)
 
+	start = time.Now()
 	ecbPlainText, err := decryptECB(ecbCipherText, key)
 	if err != nil {
 		fmt.Println("Error decrypting ECB:", err)
 		return
 	}
+	fmt.Println("Time taken for ECB decryption for file", fileName, ":", time.Since(start))
 	os.WriteFile(fileName+"_ecb_dec.txt", ecbPlainText, 0644)
 
 	// Flip a random bit in the ciphertext
@@ -184,20 +182,25 @@ func processFile(fileName string, key []byte) {
 		fmt.Println("Error decrypting ECB after flipping a bit:", err)
 		return
 	}
+	os.WriteFile(fileName+"_ecb_dec_flipped.txt", ecbPlainText, 0644)
 
 	// Encrypt and decrypt using CBC
+	start = time.Now()
 	cbcCipherText, err := encryptCBC(plainText, key)
 	if err != nil {
 		fmt.Println("Error encrypting CBC:", err)
 		return
 	}
+	fmt.Println("Time taken for CBC encryption for file", fileName, ":", time.Since(start))
 	os.WriteFile(fileName+"_cbc_enc.txt", cbcCipherText, 0644)
 
+	start = time.Now()
 	cbcPlainText, err := decryptCBC(cbcCipherText, key)
 	if err != nil {
 		fmt.Println("Error decrypting CBC:", err)
 		return
 	}
+	fmt.Println("Time taken for CBC decryption for file", fileName, ":", time.Since(start))
 	os.WriteFile(fileName+"_cbc_dec.txt", cbcPlainText, 0644)
 
 	// Flip a random bit in the ciphertext
@@ -215,18 +218,22 @@ func processFile(fileName string, key []byte) {
 	os.WriteFile(fileName+"_cbc_dec_flipped.txt", cbcPlainText, 0644)
 
 	// Encrypt and decrypt using CTR
+	start = time.Now()
 	ctrCipherText, err := encryptCTR(plainText, key)
 	if err != nil {
 		fmt.Println("Error encrypting CTR:", err)
 		return
 	}
+	fmt.Println("Time taken for CTR encryption for file", fileName, ":", time.Since(start))
 	os.WriteFile(fileName+"_ctr_enc.txt", ctrCipherText, 0644)
 
+	start = time.Now()
 	ctrPlainText, err := decryptCTR(ctrCipherText, key)
 	if err != nil {
 		fmt.Println("Error decrypting CTR:", err)
 		return
 	}
+	fmt.Println("Time taken for CTR decryption for file", fileName, ":", time.Since(start))
 	os.WriteFile(fileName+"_ctr_dec.txt", ctrPlainText, 0644)
 
 	// Flip a random bit in the ciphertext
